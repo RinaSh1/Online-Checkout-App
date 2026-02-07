@@ -1,41 +1,56 @@
-import { useCheckoutStore } from "@/stores/checkout-store";
+"use client";
+
+import { useCartStore } from "@/stores/cart-store";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { generateMessage } from "@/lib/generate-message";
-import { SendHorizonal } from "lucide-react";
 
 export const StepFinish = () => {
-    const { name } = useCheckoutStore((state) => state);
+  const cart = useCartStore((s) => s.cart);
 
-    const message = generateMessage();
-    const linkWhatsApp = `https://wa.me//${
-        process.env.NEXT_PUBLIC_WHATSAPP
-    }?text=${encodeURI(message)}`;
+  const handleCheckout = async () => {
+    const items = cart.map((c) => ({
+      priceId: c.product.priceId,
+      quantity: c.quantity,
+    }));
 
-    const handleClick = () => {
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
-    };
+    console.log("cart:", cart);
+    console.log("items being sent:", items);
 
-    return (
-        <div className="text-center flex flex-col gap-5">
-            <p>
-                All set <strong>{name}</strong>!
-            </p>
-            <p>
-                We will now send your order to our WhatsApp to complete. Our
-                attendants will guide you through the progress of your order.
-            </p>
-            <Button onClick={handleClick}>
-                <Link
-                    target="_blank"
-                    href={linkWhatsApp}
-                    className="w-full flex justify-center"
-                >
-                    <SendHorizonal className="mr-1" /> Send to WhatsApp
-                </Link>
-            </Button>
-        </div>
-    );
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+
+      // Use text first so we can safely handle HTML error pages too
+      const text = await res.text();
+      console.log("STATUS:", res.status);
+      console.log("RAW RESPONSE:", text);
+
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Not JSON (often an HTML error page)
+      }
+
+      if (!res.ok) {
+        alert(data.error ?? "Checkout failed. See console RAW RESPONSE.");
+        return;
+      }
+
+      if (!data?.url) {
+        alert("Checkout failed: missing redirect URL.");
+        return;
+      }
+
+      // Redirect to Stripe hosted checkout page
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("Checkout request failed:", err);
+      alert("Checkout request failed. See console for details.");
+    }
+  };
+
+  return <Button onClick={handleCheckout}>Checkout</Button>;
 };
